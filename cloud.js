@@ -132,8 +132,8 @@ function renderItems() {
     const card = element("article", void 0, `activity ${item.status}`), top = element("div", void 0, "activity-top"), identity = element("div");
     identity.append(element("h3", item.patient_name || item.activity, "patient-name"), element("p", item.date_of_service ? `Date of service \xB7 ${(/* @__PURE__ */ new Date(item.date_of_service + "T12:00:00")).toLocaleDateString(void 0, { month: "short", day: "numeric", year: "numeric" })}` : "Personal follow-up \xB7 no visit date", "visit-meta"));
     top.append(identity, element("span", (item.status === "open" ? "\u25CF Active" : item.status === "completed" ? "\u2713 Inactive" : "\u2014 Flag cleared") + (item.simulated ? " \xB7 test" : ""), `pill ${item.status}`));
-    card.append(top, element("p", `${item.source_type === "personal" ? "\u2605 My follow-up \xB7 " : ""}${displayActivity(item.activity)}`, "activity-name"), element("p", item.source_type === "personal" ? "DIRECTIONS" : "DIRECTIONS \xB7 CMTS", "section-label"), element("div", item.directions || "No directions entered.", "directions"));
-    const label = element("label", "Notes"), editor = element("textarea"), status = element("span", "Saved", "saved-state");
+    card.append(top, element("p", `${item.source_type === "personal" ? "\u2605 My follow-up \xB7 " : ""}${displayActivity(item.activity)}`, "activity-name"), element("p", item.source_type === "personal" ? "DIRECTIONS" : "Darryl\u2019s Comments", "section-label"), element("div", item.directions || "No directions entered.", "directions"));
+    const label = element("label", "Notes \xB7 saved in this app"), editor = element("textarea"), status = element("span", "Saved", "saved-state");
     editor.id = `notes-${item.appointment_id}-${item.field_id}`;
     label.htmlFor = editor.id;
     editor.maxLength = 2e4;
@@ -187,6 +187,40 @@ function renderItems() {
         dirtyState();
       }
     });
+    if (item.source_type === "drchrono") {
+      const block = element("details", void 0, "iphone-notes-panel"), summary = element("summary", "IPHONE APP NOTES \xB7 DrChrono");
+      const help = element("p", "Shared with DrChrono for this visit. Separate from your app-only Notes.", "hint");
+      const remoteEditor = element("textarea"), remoteSave = element("button", "Save to DrChrono", "remote-save");
+      const remoteKey = "iphone:" + key(item);
+      remoteEditor.maxLength = 2e4;
+      remoteEditor.setAttribute("aria-label", "IPHONE APP NOTES");
+      remoteEditor.value = drafts.has(remoteKey) ? drafts.get(remoteKey) : item.iphone_notes || "";
+      remoteSave.disabled = remoteEditor.value === (item.iphone_notes || "");
+      remoteEditor.addEventListener("input", () => {
+        remoteSave.disabled = remoteEditor.value === (item.iphone_notes || "");
+        if (remoteSave.disabled) drafts.delete(remoteKey);
+        else drafts.set(remoteKey, remoteEditor.value);
+      });
+      remoteSave.onclick = async () => {
+        if (!confirm("Save this text to the live DrChrono IPHONE APP NOTES field for this visit?")) return;
+        remoteSave.disabled = true;
+        remoteEditor.disabled = true;
+        notify("Saving to DrChrono and verifying the result. Throttle protection remains active.");
+        try {
+          const result = await api(`/activities/${encodeURIComponent(item.appointment_id)}/${item.field_id}/iphone-notes`, "PUT", { version: item.version, notes: remoteEditor.value });
+          Object.assign(item, result);
+          drafts.delete(remoteKey);
+          notify("IPHONE APP NOTES saved and verified in DrChrono.");
+          renderItems();
+        } catch (e) {
+          notify(e.message, true);
+          remoteEditor.disabled = false;
+          remoteSave.disabled = false;
+        }
+      };
+      block.append(summary, help, remoteEditor, remoteSave);
+      card.append(block);
+    }
     actions.append(save, status, complete);
     card.append(label, editor, actions, element("p", `Created ${new Date(item.created_at).toLocaleString()} \xB7 Updated ${new Date(item.updated_at).toLocaleString()}`, "record-dates"));
     list.append(card);
